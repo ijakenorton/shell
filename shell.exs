@@ -44,13 +44,11 @@ defmodule Shell.Lexer do
   defstruct line_no: 0, col_no: 0, curr: nil, next: nil, rest: <<>>, tokens: []
 
   def start do
-    {:ok, agent} = Agent.start_link(fn -> [] end)
-    IO.puts("Agent REPL Started (Ctrl+C to exit)")
-    loop(agent)
+    {:ok, tokens} = Agent.start_link(fn -> [] end)
   end
 
   def update_tokens(agent, token) do
-    Agent.update(agent, fn token ->
+    Agent.update(agent, fn tokens ->
       [token | tokens]
     end)
   end
@@ -96,4 +94,4 @@ end
 defmodule Shell.Parser do
 end
 
-ShellREPL.start()
+Shell.REPL.start()
