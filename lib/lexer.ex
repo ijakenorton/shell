@@ -49,23 +49,23 @@ defmodule Shell.Lexer do
     statements |> Enum.map(&tokenize(&1, <<>>, []))
   end
 
-  def lex_line(%__MODULE__{rest: <<>>} = lexer) do
-    %{lexer | line_no: lexer.line_no + 1}
-  end
+  # def lex_line(%__MODULE__{rest: <<>>} = lexer) do
+  #   %{lexer | line_no: lexer.line_no + 1}
+  # end
 
-  def lex_line(lexer) do
-    lex_line(lexer)
-  end
+  # def lex_line(lexer) do
+  #   lex_line(lexer)
+  # end
 
-  def next(%__MODULE__{rest: <<>>} = lexer), do: lexer
+  # def next(%__MODULE__{rest: <<>>} = lexer), do: lexer
 
-  def next(%__MODULE__{rest: <<char::utf8, rest::binary>>} = lexer) do
-    %__MODULE__{
-      lexer
-      | curr: lexer.next,
-        next: char,
-        rest: rest,
-        col_no: lexer.col_no + 1
-    }
-  end
+  # def next(%__MODULE__{rest: <<char::utf8, rest::binary>>} = lexer) do
+  #   %__MODULE__{
+  #     lexer
+  #     | curr: lexer.next,
+  #       next: char,
+  #       rest: rest,
+  #       col_no: lexer.col_no + 1
+  #   }
+  # end
 end
