@@ -35,7 +35,7 @@ defmodule Shell do
       input ->
         update_history(agent, input)
 
-        lexed = Shell.LexerLazy.lex(input)
+        lexed = Shell.Lexer.lex(input)
         IO.inspect(lexed)
         loop(agent)
     end
