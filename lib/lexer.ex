@@ -8,35 +8,12 @@ defmodule Shell.Lexer do
             rest: <<>>,
             tokens: [%Token{type: :ident}]
 
-  def statements(input, acc \\ [])
-  def statements(<<>>, acc), do: Enum.reverse(acc)
-
-  def statements(input, acc) do
-    {rest, line} = statement(input)
-    statements(rest, [line | acc])
-  end
-
-  def statement(input, acc \\ <<>>)
-  def statement(<<>>, acc), do: {<<>>, acc}
-  def statement(<<?., rest::bitstring>>, acc), do: {rest, acc}
-
-  def statement(<<char::utf8, rest::bitstring>>, acc) do
-    statement(rest, <<acc::binary, char::utf8>>)
-  end
-
   def tokenize(<<>>, {<<>>, :none}, acc), do: Enum.reverse(acc)
-  def tokenize(<<>>, {curr, type}, acc), do: Enum.reverse([Token.new(curr, type) | acc])
 
-  def tokenize(<<?\s, rest::bitstring>>, {curr, type}, acc) do
-    case type do
-      :none ->
-        tokenize(rest, {<<>>, :none}, acc)
+  def tokenize(<<>>, {curr, type}, acc), do: Enum.reverse(make_token({curr, type}, acc))
 
-      _ ->
-        new = Token.new(curr, type)
-        tokenize(rest, {<<>>, :none}, [new | acc])
-    end
-  end
+  def tokenize(<<?\s, rest::bitstring>>, {curr, type}, acc),
+    do: tokenize(rest, {<<>>, :none}, make_token({curr, type}, acc))
 
   def tokenize(<<char::utf8, rest::bitstring>>, {curr, type}, acc)
       when char in ?a..?z or
@@ -59,7 +36,14 @@ defmodule Shell.Lexer do
     end
   end
 
-  def tokenize(<<char::utf8, rest::bitstring>>, {_curr, _type}, acc) do
+  def tokenize(<<char::utf8, rest::bitstring>>, {curr, type}, acc) do
+    _prev =
+      case type do
+        :none -> :ok
+        _ -> raise RuntimeError, message: "Please split symbols with a space, #{curr}
+  #{to_char(char)}"
+      end
+
     token =
       case char do
         ?. -> {to_char(char), :dot}
@@ -73,7 +57,7 @@ defmodule Shell.Lexer do
         ?} -> {to_char(char), :rbrace}
         ?' -> {to_char(char), :squote}
         ?" -> {to_char(char), :dquote}
-        _ -> raise RuntimeError, message: "#{to_char(char)} is not lexible"
+        _ -> raise RuntimeError, message: "<<#{to_char(char)}>> is not lexible"
       end
 
     {curr, type} = token
@@ -82,8 +66,24 @@ defmodule Shell.Lexer do
   end
 
   def lex(input) do
-    statements = statements(input)
-    statements |> Enum.map(&tokenize(&1, {<<>>, :none}, []))
+    tokenize(input, {<<>>, :none}, [])
+  end
+
+  defp make_token({curr, type}, acc) do
+    case type do
+      :none ->
+        acc
+
+      :alpha ->
+        case curr do
+          "let" -> [Token.new(curr, :let) | acc]
+          "fn" -> [Token.new(curr, :fn) | acc]
+          _ -> [Token.new(curr, type) | acc]
+        end
+
+      _ ->
+        [Token.new(curr, type) | acc]
+    end
   end
 
   defp to_char(char), do: <<char::utf8>>

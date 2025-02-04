@@ -17,7 +17,9 @@ defmodule Shell.Token do
     :lbrace,
     :rbrace,
     :squote,
-    :dquote
+    :dquote,
+    :fn,
+    :let
   )
   defstruct [:type, :value]
 
@@ -40,7 +42,9 @@ defmodule Shell.Token do
              :lbrace,
              :rbrace,
              :squote,
-             :dquote
+             :dquote,
+             :fn,
+             :let
            ] do
     %__MODULE__{type: type, value: value}
   end

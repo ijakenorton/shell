@@ -17,7 +17,7 @@ defmodule Shell.LexerLazy do
   defp next_char(<<>>), do: nil
   defp next_char(<<char::utf8, rest::binary>>), do: {char, rest}
 
-  defp chunk_token(char, {acc, type} = state) do
+  defp chunk_token(char, {acc, type}) do
     case {char, type} do
       # Starting a new number
       {x, :none} when x in ?0..?9 ->
