@@ -1,8 +1,20 @@
 defmodule Shell do
   def start do
-    {:ok, agent} = Agent.start_link(fn -> %{history: []} end)
-    IO.puts("Agent REPL Started (Ctrl+C to exit)")
-    loop(agent)
+    case Agent.start_link(fn -> %{history: []} end) do
+      {:ok, agent} ->
+        case Shell.Idents.start_link(nil) do
+          # happy path
+          {:ok, _idents} ->
+            IO.puts("Welcome to something something shell")
+            loop(agent)
+
+          err ->
+            raise RuntimeError, message: "Failed to start idents agent with error #{err}"
+        end
+
+      err ->
+        raise RuntimeError, message: "Failed to start shell agent with error #{err}"
+    end
   end
 
   def update_history(agent, input) do
