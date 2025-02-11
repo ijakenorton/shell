@@ -57,6 +57,8 @@ defmodule Shell.Lexer do
         ?} -> {to_char(char), :rbrace}
         ?' -> {to_char(char), :squote}
         ?" -> {to_char(char), :dquote}
+        ?? -> {to_char(char), :question_mark}
+        ?! -> {to_char(char), :bang}
         _ -> raise RuntimeError, message: "<<#{to_char(char)}>> is not lexible"
       end
 
