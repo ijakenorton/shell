@@ -6,13 +6,20 @@ defmodule Shell.History do
   end
 
   def get_history do
-    Agent.get(__MODULE__, &Enum.reverse(&1))
+    if Process.whereis(__MODULE__) do
+      Agent.get(__MODULE__, &Enum.reverse(&1))
+    else
+      # Return empty list if Agent isn't started
+      []
+    end
   end
 
   def put_history(line) do
-    Agent.update(__MODULE__, &[line | &1])
-  end
-
-  def inspect_ident() do
+    if Process.whereis(__MODULE__) do
+      Agent.update(__MODULE__, &[line | &1])
+    else
+      # Could log error or start the Agent here
+      {:error, :not_started}
+    end
   end
 end

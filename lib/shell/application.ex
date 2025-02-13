@@ -5,6 +5,8 @@ defmodule Shell.Application do
     children = [
       {Registry, keys: :unique, name: Shell.Registry},
       {Task.Supervisor, name: Shell.TaskSupervisor},
+      Shell.History,
+      Shell.Idents,
       Shell.Server
     ]
 
