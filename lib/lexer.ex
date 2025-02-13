@@ -3,17 +3,15 @@ defmodule Shell.Lexer do
 
   defstruct line_no: 0,
             col_no: 0,
-            curr: nil,
-            next: nil,
             rest: <<>>,
             tokens: [%Token{type: :ident}]
 
   def tokenize(<<>>, {<<>>, :none}, acc), do: Enum.reverse(acc)
 
-  def tokenize(<<>>, {curr, type}, acc), do: Enum.reverse(make_token({curr, type}, acc))
+  def tokenize(<<>>, {curr, type}, acc), do: Enum.reverse(make_and_add_token({curr, type}, acc))
 
   def tokenize(<<?\s, rest::bitstring>>, {curr, type}, acc),
-    do: tokenize(rest, {<<>>, :none}, make_token({curr, type}, acc))
+    do: tokenize(rest, {<<>>, :none}, make_and_add_token({curr, type}, acc))
 
   def tokenize(<<char::utf8, rest::bitstring>>, {curr, type}, acc)
       when char in ?a..?z or
@@ -39,9 +37,11 @@ defmodule Shell.Lexer do
   def tokenize(<<char::utf8, rest::bitstring>>, {curr, type}, acc) do
     _prev =
       case type do
-        :none -> :ok
-        _ -> raise RuntimeError, message: "Please split symbols with a space, #{curr}
-  #{to_char(char)}"
+        :none ->
+          :ok
+
+        _ ->
+          make_and_add_token({curr, type}, acc)
       end
 
     token =
@@ -59,7 +59,7 @@ defmodule Shell.Lexer do
         ?" -> {to_char(char), :dquote}
         ?? -> {to_char(char), :question_mark}
         ?! -> {to_char(char), :bang}
-        _ -> raise RuntimeError, message: "<<#{to_char(char)}>> is not lexible"
+        _ -> {to_char(char), :unlexible}
       end
 
     {curr, type} = token
@@ -71,7 +71,7 @@ defmodule Shell.Lexer do
     tokenize(input, {<<>>, :none}, [])
   end
 
-  defp make_token({curr, type}, acc) do
+  defp make_and_add_token({curr, type}, acc) do
     case type do
       :none ->
         acc
@@ -89,23 +89,4 @@ defmodule Shell.Lexer do
   end
 
   defp to_char(char), do: <<char::utf8>>
-  # def lex_line(%__MODULE__{rest: <<>>} = lexer) do
-  #   %{lexer | line_no: lexer.line_no + 1}
-  # end
-
-  # def lex_line(lexer) do
-  #   lex_line(lexer)
-  # end
-
-  # def next(%__MODULE__{rest: <<>>} = lexer), do: lexer
-
-  # def next(%__MODULE__{rest: <<char::utf8, rest::binary>>} = lexer) do
-  #   %__MODULE__{
-  #     lexer
-  #     | curr: lexer.next,
-  #       next: char,
-  #       rest: rest,
-  #       col_no: lexer.col_no + 1
-  #   }
-  # end
 end
