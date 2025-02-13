@@ -44,7 +44,8 @@ defmodule Shell.Token do
              :squote,
              :dquote,
              :fn,
-             :let
+             :let,
+             :unlexible
            ] do
     %__MODULE__{type: type, value: value}
   end

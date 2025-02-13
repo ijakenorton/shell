@@ -82,8 +82,9 @@ defmodule Shell.Server do
                 :ok
             end
 
-            lexed = Shell.Lexer.lex(input)
-            :gen_tcp.send(socket, "#{inspect(lexed)}\r\n>> ")
+            tokens = Shell.Lexer.lex(input)
+            Shell.Parser.parse(tokens)
+            :gen_tcp.send(socket, "#{inspect(tokens)}\r\n>> ")
             shell_loop(socket)
         end
 
