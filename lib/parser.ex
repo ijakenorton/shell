@@ -3,7 +3,7 @@ defmodule Shell.Parser do
 
   def parse(tokens) do
     IO.inspect(tokens)
-    IO.inspect(length(tokens))
+    # IO.inspect(length(tokens))
   end
 end
 

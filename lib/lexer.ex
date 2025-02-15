@@ -168,7 +168,7 @@ defmodule Shell.Lexer do
     tokenize(%__MODULE__{
       rest: rest,
       position: new_pos,
-      curr_token: {<<>>, :none, %Position{}},
+      curr_token: {<<>>, :none, new_pos},
       tokens: make_and_add_token({curr, type, position}, acc)
     })
   end
