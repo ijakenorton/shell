@@ -74,7 +74,6 @@ defmodule Shell.Lexer do
       do: {Enum.reverse(make_and_add_token({curr, type, position}, acc)), end_pos}
 
   # End current token with space
-  # TODO: Handle other whitespace
   def tokenize(%__MODULE__{
         rest: <<char, rest::bitstring>>,
         position: lexer_pos,
@@ -182,9 +181,7 @@ defmodule Shell.Lexer do
     %Position{file: file, row: row, col: col + 1}
   end
 
-  # And when you add line breaks
   defp increment_row(%Position{file: file, row: row}) do
-    # Reset column to 1 on new line
     %Position{file: file, row: row + 1, col: 1}
   end
 end
