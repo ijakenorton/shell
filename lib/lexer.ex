@@ -73,7 +73,7 @@ defmodule Shell.Lexer do
       }),
       do: {Enum.reverse(make_and_add_token({curr, type, position}, acc)), end_pos}
 
-  # End current token with space
+  # End current token with whitespace
   def tokenize(%__MODULE__{
         rest: <<char, rest::bitstring>>,
         position: lexer_pos,
