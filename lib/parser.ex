@@ -1,6 +1,7 @@
 defmodule Shell.Parser do
   alias Shell.AST.{Program, Expression}
   alias Shell.Token
+  alias Shell.Precedence
 
   def parse_program(tokens) do
     case parse_expressions(tokens) do
@@ -25,13 +26,11 @@ defmodule Shell.Parser do
          acc
        ) do
     case rest do
-      [%Token{type: :equals, value: value, position: eq_pos} | []] ->
+      [%Token{type: :equals, value: _value, position: eq_pos} | []] ->
         {:error, "Expected number, ident or lbrace, got nothing", eq_pos}
 
       [%Token{type: :equals} | value_tokens] ->
-        IO.inspect(value_tokens, label: "Let expr")
-
-        case parse_expression(value_tokens) do
+        case parse_expression(value_tokens, Precedence.lowest()) do
           {:ok, value_expr, remaining} ->
             let_expr = Expression.new_let(name, value_expr, pos)
             parse_expressions(remaining, [let_expr | acc])
@@ -45,98 +44,114 @@ defmodule Shell.Parser do
     end
   end
 
-  # Function call
-  defp parse_expressions(
-         [%Token{type: :ident, value: name, position: pos}, %Token{type: :lparen} | rest],
-         acc
-       ) do
-    case parse_function_arguments(rest) do
-      {:ok, args, remaining} ->
-        call_expr = Expression.new_function_call(name, args, pos)
-        parse_expressions(remaining, [call_expr | acc])
-
-      {:error, msg, error_pos} ->
-        {:error, msg, error_pos}
-    end
-  end
-
-  # Bare identifier (error)
-  defp parse_expressions([%Token{type: :ident, position: pos} | _], _acc) do
-    {:error, "Unexpected identifier at top level", pos}
-  end
-
   # Invalid top-level expression
-  defp parse_expressions([%Token{type: type, position: pos} | _], _acc) do
+  defp parse_expressions([%Token{type: type, position: pos} | _rest], _acc) do
     {:error, "Invalid top-level expression: #{type}", pos}
   end
 
-  # Individual expression parsing
-  defp parse_expression(tokens, precedence \\ :lowest)
-
-  # Number literals
-  defp parse_expression([%Token{type: :number, value: num, position: pos} | rest], _precedence) do
-    {:ok, Expression.new_number(num, pos), rest}
+  # Expression parsing with precedence
+  defp parse_expression(tokens, precedence \\ Precedence.lowest()) do
+    with {:ok, left, rest} <- parse_prefix(tokens),
+         {:ok, result, remaining} <- parse_expression_continue(left, rest, precedence) do
+      {:ok, result, remaining}
+    end
   end
 
-  defp parse_expression([%Token{type: :plus, value: name, position: pos} | rest], _precedence) do
-    {:ok, Expression.new_plus(name, pos), rest}
+  defp parse_expression_continue(left, [next_token | _] = tokens, precedence) do
+    next_precedence = Precedence.get_precedence(next_token.type)
+
+    if precedence < next_precedence do
+      with {:ok, new_left, remaining} <- parse_infix(left, tokens, precedence) do
+        parse_expression_continue(new_left, remaining, precedence)
+      end
+    else
+      {:ok, left, tokens}
+    end
   end
 
-  # Identifiers
-  defp parse_expression([%Token{type: :ident, value: name, position: pos} | rest], _precedence) do
-    {:ok, Expression.new_identifier(name, pos), rest}
+  defp parse_expression_continue(left, [], _precedence), do: {:ok, left, []}
+
+  # Prefix parsing functions
+  defp parse_prefix([%Token{type: type, position: pos} = token | rest] = tokens) do
+    case type do
+      :number ->
+        {:ok, Expression.new_number(token.value, token.position), rest}
+
+      :ident ->
+        {:ok, Expression.new_identifier(token.value, token.position), rest}
+
+      :plus ->
+        {:ok, Expression.new_plus(token.value, token.position), rest}
+
+      :fn ->
+        case parse_function(tokens) do
+          {:error, message, nil} -> {:error, message, pos}
+          _ -> parse_function(tokens)
+        end
+
+      :lbrace ->
+        case parse_block(tokens) do
+          {:error, message, nil} -> {:error, message, pos}
+          _ -> parse_block(tokens)
+        end
+
+      _ ->
+        {:error, "No prefix parse function for #{type}", token.position}
+    end
   end
 
-  # fn expressions
-  defp parse_expression([%Token{type: :fn, position: pos} | rest], _precedence) do
+  # Infix parsing functions
+  defp parse_infix(left, [%Token{type: :plus, position: pos} | rest], _precedence) do
+    with {:ok, right, remaining} <- parse_expression(rest, Precedence.sum()) do
+      {:ok, %Expression{type: :infix, value: {:plus, left, right}, position: pos}, remaining}
+    end
+  end
+
+  defp parse_infix(left, [%Token{type: :lparen, position: pos} | rest], _precedence) do
+    case parse_function_arguments(rest) do
+      {:ok, args, remaining} ->
+        {:ok, Expression.new_function_call(left.value, args, left.position), remaining}
+
+      {:error, message, nil} ->
+        {:error, message, pos}
+
+      error ->
+        error
+    end
+  end
+
+  defp parse_infix(left, rest, _precedence), do: {:ok, left, rest}
+
+  # Helper functions
+  defp parse_function([%Token{type: :fn, position: pos} | rest]) do
     case parse_function_params(rest) do
       {:ok, params, [%Token{type: :lbrace} | block_tokens]} ->
         case parse_block(block_tokens) do
           {:ok, body, remaining} ->
             {:ok, Expression.new_function(params, body, pos), remaining}
 
-          {:error, msg, error_pos} ->
-            {:error, msg, error_pos}
+          error ->
+            error
         end
 
       {:ok, _params, [%Token{type: type, position: error_pos} | _]} ->
         {:error, "Expected { after function parameters, got #{type}", error_pos}
 
-      {:error, msg, error_pos} ->
-        {:error, msg, error_pos}
+      error ->
+        error
     end
   end
 
-  # Block expressions
-  defp parse_expression([%Token{type: :lbrace, position: pos} | rest], _precedence) do
-    case parse_block(rest) do
-      {:ok, exprs, [%Token{type: :rbrace} | remaining]} ->
-        {:ok, Expression.new_block(exprs, pos), remaining}
-
-      {:ok, _, _} ->
-        {:error, "Expected } at end of block", pos}
-
-      {:error, msg, error_pos} ->
-        {:error, msg, error_pos}
-    end
-  end
-
-  defp parse_expression([%Token{type: type, value: name, position: pos} | _rest], _precedence) do
-    {:error, "Expected number, ident or lbrace, got #{type}", pos}
-  end
-
-  # Helper functions
   defp parse_block(tokens, acc \\ []) do
     case tokens do
       [] ->
         {:error, "Unclosed block", nil}
 
-      [%Token{type: :rbrace} | _] = rest ->
-        IO.inspect(rest)
+      [%Token{type: :rbrace} | rest] ->
         {:ok, Enum.reverse(acc), rest}
 
       tokens ->
-        case parse_expression(tokens) do
+        case parse_expression(tokens, Precedence.lowest()) do
           {:ok, expr, remaining} ->
             parse_block(remaining, [expr | acc])
 
@@ -158,7 +173,7 @@ defmodule Shell.Parser do
         parse_function_arguments(rest, acc)
 
       tokens ->
-        case parse_expression(tokens) do
+        case parse_expression(tokens, Precedence.lowest()) do
           {:ok, expr, [%Token{type: type} | _] = rest} when type in [:comma, :rparen] ->
             parse_function_arguments(rest, [expr | acc])
 

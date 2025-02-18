@@ -59,6 +59,99 @@ defmodule Shell.ParserTest do
     end
   end
 
+  describe "infix expressions" do
+    test "parses plus operator" do
+      tokens = [
+        token(:let, "let", 1, 1),
+        token(:ident, "x", 1, 5),
+        token(:equals, "=", 1, 7),
+        token(:number, "1", 1, 9),
+        token(:plus, "+", 1, 11),
+        token(:number, "2", 1, 13)
+      ]
+
+      assert {:ok,
+              %Program{
+                expressions: [
+                  %Expression{
+                    type: :let,
+                    value:
+                      {"x",
+                       %Expression{
+                         type: :infix,
+                         value:
+                           {:plus,
+                            %Expression{
+                              type: :number,
+                              value: "1",
+                              position: %Position{row: 1, col: 9}
+                            },
+                            %Expression{
+                              type: :number,
+                              value: "2",
+                              position: %Position{row: 1, col: 13}
+                            }},
+                         position: %Position{row: 1, col: 11}
+                       }},
+                    position: %Position{row: 1, col: 5}
+                  }
+                ]
+              }, []} = Parser.parse_program(tokens)
+    end
+
+    test "parses chained plus operators" do
+      tokens = [
+        token(:let, "let", 1, 1),
+        token(:ident, "x", 1, 5),
+        token(:equals, "=", 1, 7),
+        token(:number, "1", 1, 9),
+        token(:plus, "+", 1, 11),
+        token(:number, "2", 1, 13),
+        token(:plus, "+", 1, 15),
+        token(:number, "3", 1, 17)
+      ]
+
+      assert {:ok,
+              %Program{
+                expressions: [
+                  %Expression{
+                    type: :let,
+                    value:
+                      {"x",
+                       %Expression{
+                         type: :infix,
+                         value:
+                           {:plus,
+                            %Expression{
+                              type: :infix,
+                              value:
+                                {:plus,
+                                 %Expression{
+                                   type: :number,
+                                   value: "1",
+                                   position: %Position{row: 1, col: 9}
+                                 },
+                                 %Expression{
+                                   type: :number,
+                                   value: "2",
+                                   position: %Position{row: 1, col: 13}
+                                 }},
+                              position: %Position{row: 1, col: 11}
+                            },
+                            %Expression{
+                              type: :number,
+                              value: "3",
+                              position: %Position{row: 1, col: 17}
+                            }},
+                         position: %Position{row: 1, col: 15}
+                       }},
+                    position: %Position{row: 1, col: 5}
+                  }
+                ]
+              }, []} = Parser.parse_program(tokens)
+    end
+  end
+
   # describe "block expressions" do
   #   test "parses empty block" do
   #     tokens = [
