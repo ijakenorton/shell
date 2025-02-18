@@ -89,7 +89,15 @@ defmodule Shell.Server do
               case Shell.Parser.parse_program(tokens) do
                 {:ok, ast, []} ->
                   IO.inspect(ast)
-                  Evaluator.eval(ast)
+                  eval = Evaluator.eval(ast)
+
+                  case eval do
+                    {:error, message, pos} ->
+                      inspect({:error, message, pos}, pretty: true, width: 80, limit: :infinity)
+
+                    _ ->
+                      eval
+                  end
 
                 {:error, message, pos} ->
                   inspect({:error, message, pos}, pretty: true, width: 80, limit: :infinity)

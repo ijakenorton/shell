@@ -8,9 +8,15 @@ defmodule Shell.Evaluator do
   end
 
   defp eval_expressions(expressions) do
-    Enum.reduce(expressions, nil, fn expr, _last_result ->
-      eval_expression(expr)
-    end)
+    result =
+      Enum.reduce(expressions, nil, fn expr, _last_result ->
+        eval_expression(expr)
+      end)
+
+    case result do
+      {:error, message, pos} -> {:error, message, pos}
+      _ -> result
+    end
   end
 
   defp eval_expression(%Expression{type: :number, value: value}) do
@@ -35,5 +41,9 @@ defmodule Shell.Evaluator do
     value = eval_expression(value_expr)
     Idents.put_ident(name, value)
     value
+  end
+
+  defp eval_expression(%Expression{type: type, position: pos}) do
+    {:error, "#{type} is not implemented", pos}
   end
 end
