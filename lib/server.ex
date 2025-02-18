@@ -1,4 +1,5 @@
 defmodule Shell.Server do
+  alias Shell.Evaluator
   use GenServer
   require Logger
 
@@ -83,9 +84,20 @@ defmodule Shell.Server do
             end
 
             {tokens, _pos} = Shell.Lexer.lex(input)
-            ast = Shell.Parser.parse_program(tokens)
-            formatted_ast = inspect(ast, pretty: true, width: 80, limit: :infinity)
-            :gen_tcp.send(socket, "#{formatted_ast}\r\n>> ")
+
+            shell_message =
+              case Shell.Parser.parse_program(tokens) do
+                {:ok, ast, []} ->
+                  IO.inspect(ast)
+                  Evaluator.eval(ast)
+
+                {:error, message, pos} ->
+                  inspect({:error, message, pos}, pretty: true, width: 80, limit: :infinity)
+              end
+
+            # formatted_ast = inspect(ast, pretty: true, width: 80, limit: :infinity)
+            # IO.inspect(formatted_ast)
+            :gen_tcp.send(socket, "#{shell_message}\r\n>> ")
             shell_loop(socket)
         end
 
