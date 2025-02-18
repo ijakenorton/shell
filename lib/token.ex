@@ -44,6 +44,7 @@ defmodule Shell.Token do
 
   # Create type spec from the token types
   @type token_type :: unquote(Enum.reduce(@token_types, &{:|, [], [&1, &2]}))
+  @type tokens :: [token_type()]
 
   defstruct [:type, :value, :position]
 

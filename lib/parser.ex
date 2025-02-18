@@ -1,7 +1,14 @@
 defmodule Shell.Parser do
+  alias Shell.Position
   alias Shell.AST.{Program, Expression}
   alias Shell.Token
   alias Shell.Precedence
+
+  defstruct [:parser]
+
+  # @type t :: %__MODULE__{}
+  # @type parser_error :: {:error, String.t(), Shell.Position.t()}
+  @type parser_error :: {:error, String.t(), Position.t()}
 
   def parse_program(tokens) do
     case parse_expressions(tokens) do
@@ -16,6 +23,8 @@ defmodule Shell.Parser do
     end
   end
 
+  @spec parse_expressions(Token.tokens(), []) ::
+          {:ok, [Expression.expression_type()], []} | parser_error()
   # Top-level expression parsing
   defp parse_expressions(tokens, acc \\ [])
   defp parse_expressions([], acc), do: {:ok, Enum.reverse(acc), []}
@@ -49,6 +58,9 @@ defmodule Shell.Parser do
     {:error, "Invalid top-level expression: #{type}", pos}
   end
 
+  @spec parse_expression(Token.tokens(), Precedence.precedence_value()) ::
+          {:ok, [Expression.expression_type()], Token.tokens() | []}
+          | parser_error()
   # Expression parsing with precedence
   defp parse_expression(tokens, precedence \\ Precedence.lowest()) do
     with {:ok, left, rest} <- parse_prefix(tokens),
@@ -57,6 +69,9 @@ defmodule Shell.Parser do
     end
   end
 
+  @spec parse_expression_continue(Token.tokens(), Token.tokens(), Precedence.precedence_value()) ::
+          {:ok, Expression.expression_type(), Token.tokens() | []}
+          | parser_error()
   defp parse_expression_continue(left, [next_token | _] = tokens, precedence) do
     next_precedence = Precedence.get_precedence(next_token.type)
 
@@ -71,6 +86,8 @@ defmodule Shell.Parser do
 
   defp parse_expression_continue(left, [], _precedence), do: {:ok, left, []}
 
+  @spec parse_prefix(Token.tokens()) ::
+          {:ok, Expresssion.expression_type(), Token.tokens() | []} | parser_error()
   # Prefix parsing functions
   defp parse_prefix([%Token{type: type, position: pos} = token | rest] = tokens) do
     case type do
@@ -101,6 +118,9 @@ defmodule Shell.Parser do
   end
 
   # Infix parsing functions
+
+  @spec parse_infix(Expression.expression_type(), Token.tokens(), Precedence.precedence_value()) ::
+          {:ok, Expression.expression_type(), Token.tokens() | []} | parser_error()
   defp parse_infix(left, [%Token{type: :plus, position: pos} | rest], _precedence) do
     with {:ok, right, remaining} <- parse_expression(rest, Precedence.sum()) do
       {:ok, %Expression{type: :infix, value: {:plus, left, right}, position: pos}, remaining}

@@ -3,7 +3,7 @@ defmodule Shell.AST do
     @type t :: %__MODULE__{
             type: expression_type(),
             value: term(),
-            position: Position.t()
+            position: Shell.Position.t()
           }
     defstruct [:type, :value, :position]
 
@@ -19,6 +19,7 @@ defmodule Shell.AST do
             # Blocks/sequences of expressions
             | :block
 
+    @spec new_number(String.t(), Shell.Position.t()) :: %__MODULE__{type: :number}
     def new_number(value, position) do
       %__MODULE__{
         type: :number,
@@ -27,6 +28,7 @@ defmodule Shell.AST do
       }
     end
 
+    @spec new_plus(expression_type(), Shell.Position.t()) :: %__MODULE__{type: :plus}
     def new_plus(value, position) do
       %__MODULE__{
         type: :plus,
@@ -35,6 +37,7 @@ defmodule Shell.AST do
       }
     end
 
+    @spec new_identifier(String.t(), Shell.Position.t()) :: %__MODULE__{type: :identifier}
     def new_identifier(name, position) do
       %__MODULE__{
         type: :identifier,
@@ -43,6 +46,7 @@ defmodule Shell.AST do
       }
     end
 
+    @spec new_let(String.t(), expression_type(), Shell.Position.t()) :: %__MODULE__{type: :let}
     def new_let(name, value_expr, position) do
       %__MODULE__{
         type: :let,
@@ -52,6 +56,8 @@ defmodule Shell.AST do
       }
     end
 
+    @spec new_function([%__MODULE__{type: :identifier}], expression_type(), Shell.Position.t()) ::
+            %__MODULE__{type: :function}
     def new_function(params, body, position) do
       %__MODULE__{
         type: :function,
@@ -61,6 +67,8 @@ defmodule Shell.AST do
       }
     end
 
+    @spec new_function_call(String.t(), [expression_type()], Shell.Position.t()) ::
+            %__MODULE__{type: :function_call}
     def new_function_call(name, args, position) do
       %__MODULE__{
         type: :function_call,
@@ -69,6 +77,8 @@ defmodule Shell.AST do
       }
     end
 
+    @spec new_block([expression_type()], Shell.Position.t()) ::
+            %__MODULE__{type: :block}
     def new_block(expressions, position) do
       %__MODULE__{
         type: :block,

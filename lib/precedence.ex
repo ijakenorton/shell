@@ -1,49 +1,60 @@
 defmodule Shell.Precedence do
+  @type precedence_level ::
+          :lowest | :equals | :lessgreater | :sum | :product | :prefix | :call | :index
+
+  @type precedence_value :: 1..8
+
   # Define constants for precedence levels
   @lowest 1
-  # == 
   @equals 2
-  # > or 
   @lessgreater 3
-  # +
   @sum 4
-  # *
   @product 5
-  # -X or !X
   @prefix 6
-  # myFunction(X)
   @call 7
-  # array[index]
   @index 8
 
-  # Create a map of token types to precedence levels
   @precedences %{
-    :eq => @equals,
-    :not_eq => @equals,
-    :lt => @lessgreater,
-    :gt => @lessgreater,
-    :plus => @sum,
-    :minus => @sum,
-    :slash => @product,
-    :asterisk => @product,
-    :lparen => @call,
-    :lbracket => @index
+    eq: @equals,
+    not_eq: @equals,
+    lt: @lessgreater,
+    gt: @lessgreater,
+    plus: @sum,
+    minus: @sum,
+    slash: @product,
+    asterisk: @product,
+    lparen: @call,
+    lbracket: @index
   }
 
-  # Make constants accessible outside the module
+  @spec lowest() :: precedence_value
   def lowest, do: @lowest
+
+  @spec equals() :: precedence_value
   def equals, do: @equals
+
+  @spec lessgreater() :: precedence_value
   def lessgreater, do: @lessgreater
+
+  @spec sum() :: precedence_value
   def sum, do: @sum
+
+  @spec product() :: precedence_value
   def product, do: @product
+
+  @spec prefix() :: precedence_value
   def prefix, do: @prefix
+
+  @spec call() :: precedence_value
   def call, do: @call
+
+  @spec index() :: precedence_value
   def index, do: @index
 
-  # Getter for precedences map
+  @spec precedences() :: %{atom() => precedence_value}
   def precedences, do: @precedences
 
-  # Helper to get precedence for a specific token
+  @spec get_precedence(atom()) :: precedence_value
   def get_precedence(token_type) do
     Map.get(@precedences, token_type, @lowest)
   end
