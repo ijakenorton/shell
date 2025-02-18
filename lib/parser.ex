@@ -25,7 +25,12 @@ defmodule Shell.Parser do
          acc
        ) do
     case rest do
+      [%Token{type: :equals, value: value, position: eq_pos} | []] ->
+        {:error, "Expected number, ident or lbrace, got nothing", eq_pos}
+
       [%Token{type: :equals} | value_tokens] ->
+        IO.inspect(value_tokens, label: "Let expr")
+
         case parse_expression(value_tokens) do
           {:ok, value_expr, remaining} ->
             let_expr = Expression.new_let(name, value_expr, pos)
@@ -40,33 +45,6 @@ defmodule Shell.Parser do
     end
   end
 
-  # Function definition
-  defp parse_expressions([%Token{type: :fn, position: pos} | rest], acc) do
-    case rest do
-      [%Token{type: :ident, value: name} | param_tokens] ->
-        case parse_function_params(param_tokens) do
-          {:ok, params, [%Token{type: :lbrace} | block_tokens]} ->
-            case parse_block(block_tokens) do
-              {:ok, body, remaining} ->
-                fn_expr = Expression.new_function(name, params, body, pos)
-                parse_expressions(remaining, [fn_expr | acc])
-
-              {:error, msg, error_pos} ->
-                {:error, msg, error_pos}
-            end
-
-          {:ok, _params, [%Token{type: type, position: error_pos} | _]} ->
-            {:error, "Expected { after function parameters, got #{type}", error_pos}
-
-          {:error, msg, error_pos} ->
-            {:error, msg, error_pos}
-        end
-
-      _ ->
-        {:error, "Expected function name after fn", pos}
-    end
-  end
-
   # Function call
   defp parse_expressions(
          [%Token{type: :ident, value: name, position: pos}, %Token{type: :lparen} | rest],
@@ -76,21 +54,6 @@ defmodule Shell.Parser do
       {:ok, args, remaining} ->
         call_expr = Expression.new_function_call(name, args, pos)
         parse_expressions(remaining, [call_expr | acc])
-
-      {:error, msg, error_pos} ->
-        {:error, msg, error_pos}
-    end
-  end
-
-  # Block expression
-  defp parse_expressions([%Token{type: :lbrace, position: pos} | rest], acc) do
-    case parse_block(rest) do
-      {:ok, exprs, [%Token{type: :rbrace} | remaining]} ->
-        block_expr = Expression.new_block(exprs, pos)
-        parse_expressions(remaining, [block_expr | acc])
-
-      {:ok, _, _} ->
-        {:error, "Expected } at end of block", pos}
 
       {:error, msg, error_pos} ->
         {:error, msg, error_pos}
@@ -115,9 +78,33 @@ defmodule Shell.Parser do
     {:ok, Expression.new_number(num, pos), rest}
   end
 
+  defp parse_expression([%Token{type: :plus, value: name, position: pos} | rest], _precedence) do
+    {:ok, Expression.new_plus(name, pos), rest}
+  end
+
   # Identifiers
   defp parse_expression([%Token{type: :ident, value: name, position: pos} | rest], _precedence) do
     {:ok, Expression.new_identifier(name, pos), rest}
+  end
+
+  # fn expressions
+  defp parse_expression([%Token{type: :fn, position: pos} | rest], _precedence) do
+    case parse_function_params(rest) do
+      {:ok, params, [%Token{type: :lbrace} | block_tokens]} ->
+        case parse_block(block_tokens) do
+          {:ok, body, remaining} ->
+            {:ok, Expression.new_function(params, body, pos), remaining}
+
+          {:error, msg, error_pos} ->
+            {:error, msg, error_pos}
+        end
+
+      {:ok, _params, [%Token{type: type, position: error_pos} | _]} ->
+        {:error, "Expected { after function parameters, got #{type}", error_pos}
+
+      {:error, msg, error_pos} ->
+        {:error, msg, error_pos}
+    end
   end
 
   # Block expressions
@@ -134,6 +121,10 @@ defmodule Shell.Parser do
     end
   end
 
+  defp parse_expression([%Token{type: type, value: name, position: pos} | _rest], _precedence) do
+    {:error, "Expected number, ident or lbrace, got #{type}", pos}
+  end
+
   # Helper functions
   defp parse_block(tokens, acc \\ []) do
     case tokens do
@@ -141,6 +132,7 @@ defmodule Shell.Parser do
         {:error, "Unclosed block", nil}
 
       [%Token{type: :rbrace} | _] = rest ->
+        IO.inspect(rest)
         {:ok, Enum.reverse(acc), rest}
 
       tokens ->

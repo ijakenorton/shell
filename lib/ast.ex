@@ -27,6 +27,14 @@ defmodule Shell.AST do
       }
     end
 
+    def new_plus(value, position) do
+      %__MODULE__{
+        type: :plus,
+        value: value,
+        position: position
+      }
+    end
+
     def new_identifier(name, position) do
       %__MODULE__{
         type: :identifier,
@@ -44,11 +52,11 @@ defmodule Shell.AST do
       }
     end
 
-    def new_function(name, params, body, position) do
+    def new_function(params, body, position) do
       %__MODULE__{
         type: :function,
         # Tuple of {function_name, parameter_list, body_expression}
-        value: {name, params, body},
+        value: {params, body},
         position: position
       }
     end
