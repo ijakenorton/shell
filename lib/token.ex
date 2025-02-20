@@ -1,4 +1,5 @@
 defmodule Shell.Token do
+  alias Shell.Position
   # Define all token types in one place
   @token_types [
     # Identifiers and literals
@@ -44,15 +45,22 @@ defmodule Shell.Token do
 
   # Create type spec from the token types
   @type token_type :: unquote(Enum.reduce(@token_types, &{:|, [], [&1, &2]}))
-  @type tokens :: [token_type()]
+  @type tokens :: [t()]
 
+  @type t :: %__MODULE__{
+          type: token_type(),
+          value: String.t(),
+          position: Position.t()
+        }
   defstruct [:type, :value, :position]
 
+  @spec new(String.t(), token_type(), Position.t()) :: t()
   # Use the module attribute for validation
   def new(value, type, position) when type in @token_types do
     %__MODULE__{type: type, value: value, position: position}
   end
 
+  @spec valid_type?(token_type()) :: boolean()
   # Helper function to check if a type is valid
   def valid_type?(type), do: type in @token_types
 
