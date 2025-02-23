@@ -37,6 +37,13 @@ defmodule Shell.Evaluator do
     end
   end
 
+  defp eval_expression(%Expression{type: :infix, value: {:asterisk, left, right}}) do
+    with %Number{value: left_val} <- eval_expression(left),
+         %Number{value: right_val} <- eval_expression(right) do
+      %Number{value: left_val * right_val}
+    end
+  end
+
   defp eval_expression(%Expression{type: :let, value: {name, value_expr}}) do
     value = eval_expression(value_expr)
     Idents.put_ident(name, value)

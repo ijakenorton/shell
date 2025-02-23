@@ -29,7 +29,6 @@ defmodule Shell.AST do
             | :function
             | :function_call
             | :block
-            # for operators like plus
             | :infix
 
     @spec new_number(String.t(), Shell.Position.t()) :: t()
@@ -50,11 +49,11 @@ defmodule Shell.AST do
       }
     end
 
-    @spec new_let(String.t(), t(), Shell.Position.t()) :: t()
-    def new_let(name, value_expr, position) do
+    @spec new_let(t(), t(), Shell.Position.t()) :: t()
+    def new_let(identifier, value_expr, position) do
       %__MODULE__{
         type: :let,
-        value: {name, value_expr},
+        value: {identifier, value_expr},
         position: position
       }
     end
@@ -95,11 +94,10 @@ defmodule Shell.AST do
       }
     end
 
-    @spec new_infix(t(), t(), Shell.Position.t()) :: t()
-    def new_infix(left, right, position) do
+    def new_infix(left, operator, right, position) do
       %__MODULE__{
         type: :infix,
-        value: {:plus, left, right},
+        value: {operator, left, right},
         position: position
       }
     end
