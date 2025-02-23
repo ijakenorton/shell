@@ -49,7 +49,7 @@ defmodule Shell.Parser do
           {:ok, parser}
 
         _errors ->
-          Debug.debug_log(inspect({:error, parser}))
+          Debug.debug_inspect({:error, parser})
           {:error, parser}
       end
     else
@@ -61,7 +61,7 @@ defmodule Shell.Parser do
           |> do_parse_program()
 
         {:error, parser} ->
-          Debug.debug_log(inspect({:error, parser}))
+          Debug.debug_inspect({:error, parser})
           {:error, parser}
       end
     end
@@ -79,7 +79,7 @@ defmodule Shell.Parser do
               parser.curr.position}
            )}
 
-        Debug.debug_log(inspect(err))
+        Debug.debug_inspect(err)
         err
 
       prefix_fn ->
@@ -88,7 +88,7 @@ defmodule Shell.Parser do
             parse_infix_expression(parser, left_exp, precedence)
 
           {:error, error} ->
-            Debug.debug_log(inspect({:error, parser}))
+            Debug.debug_inspect({:error, parser})
 
             {:error, error}
         end
@@ -114,7 +114,7 @@ defmodule Shell.Parser do
               parse_infix_expression(parser, new_exp, precedence)
 
             err ->
-              Debug.debug_log(inspect(err))
+              Debug.debug_inspect(err)
               err
           end
         else
@@ -132,7 +132,7 @@ defmodule Shell.Parser do
       {:ok, parser, Expression.new_let(identifier, value, parser.curr.position)}
     else
       {:error, parser} ->
-        Debug.debug_log({:error, parser})
+        Debug.debug_inspect({:error, parser})
         {:error, parser}
     end
   end
@@ -148,7 +148,7 @@ defmodule Shell.Parser do
         {:ok, parser, Expression.new_infix(left, operator, right, parser.curr.position)}
 
       err ->
-        Debug.debug_log(inspect(err))
+        Debug.debug_inspect(err)
         err
     end
   end
