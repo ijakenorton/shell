@@ -7,7 +7,7 @@ defmodule Shell.Lexer do
     ?= => :equals,
     ?+ => :plus,
     ?- => :plus,
-    ?* => :asterix,
+    ?* => :asterisk,
     ?/ => :fslash,
     ?\\ => :bslash,
     ?( => :lparen,
@@ -61,8 +61,9 @@ defmodule Shell.Lexer do
         position: end_pos,
         curr_token: {<<>>, :none, _position},
         tokens: acc
-      }),
-      do: {Enum.reverse(acc), end_pos}
+      }) do
+    {Enum.reverse([Token.new("eof", :eof, increment_col(end_pos)) | acc]), end_pos}
+  end
 
   # Last token
   def tokenize(%__MODULE__{
@@ -70,14 +71,20 @@ defmodule Shell.Lexer do
         position: end_pos,
         curr_token: {curr, type, position},
         tokens: acc
-      }),
-      do: {Enum.reverse(make_and_add_token({curr, type, position}, acc)), end_pos}
+      }) do
+    tokenize(%__MODULE__{
+      rest: <<>>,
+      position: increment_col(end_pos),
+      curr_token: {<<>>, :none, position},
+      tokens: make_and_add_token({curr, type, position}, acc)
+    })
+  end
 
   # End current token with whitespace
   def tokenize(%__MODULE__{
         rest: <<char, rest::bitstring>>,
         position: lexer_pos,
-        curr_token: {curr, type, position},
+        curr_token: token,
         tokens: acc
       })
       when char in [?\s, ?\t] do
@@ -87,7 +94,7 @@ defmodule Shell.Lexer do
       rest: rest,
       position: new_pos,
       curr_token: {<<>>, :none, new_pos},
-      tokens: make_and_add_token({curr, type, position}, acc)
+      tokens: make_and_add_token(token, acc)
     })
   end
 
@@ -115,13 +122,13 @@ defmodule Shell.Lexer do
   def tokenize(%__MODULE__{
         rest: <<char::utf8, rest::bitstring>>,
         position: lexer_pos,
-        curr_token: {curr, type, position},
+        curr_token: {_curr, type, _position} = token,
         tokens: acc
       }) do
     tokens =
       case type do
         :none -> acc
-        _ -> make_and_add_token({curr, type, position}, acc)
+        _ -> make_and_add_token(token, acc)
       end
 
     {token_value, token_type} =

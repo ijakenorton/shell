@@ -1,225 +1,275 @@
 defmodule Shell.Parser do
-  alias Shell.Position
-  alias Shell.AST.{Program, Expression}
-  alias Shell.Token
+  require Logger
+  require Shell.Debug
   alias Shell.Precedence
+  alias Shell.Position
+  alias Shell.Debug
+  alias Shell.Token
+  alias Shell.AST.{Program, Expression}
 
-  defstruct [:parser]
-
-  # @type t :: %__MODULE__{}
-  # @type parser_error :: {:error, String.t(), Shell.Position.t()}
   @type parser_error :: {:error, String.t(), Position.t()}
+  @type prefix_parse_fn :: (t() -> {:ok, t(), Expression.t()} | {:error, t()})
+  @type infix_parse_fn :: (t(), Expression.t() -> {:ok, t(), Expression.t()} | {:error, t()})
+
+  @type t :: %__MODULE__{
+          tokens: [Token.t()],
+          curr: Token.t(),
+          next: Token.t(),
+          expressions: [Expression.t()],
+          errors: [parser_error()],
+          prefix_parse_fns: %{Token.token_type() => prefix_parse_fn()},
+          infix_parse_fns: %{Token.token_type() => infix_parse_fn()}
+        }
+
+  defstruct tokens: [],
+            curr: %Token{},
+            next: %Token{},
+            expressions: [],
+            errors: [],
+            prefix_parse_fns: %{},
+            infix_parse_fns: %{}
+
+  def parse_program([]), do: {:error, ["no tokens to parse, possibly a lexer error"]}
+  def parse_program([token | []]), do: parse_expression(token)
 
   def parse_program(tokens) do
-    case parse_expressions(tokens) do
-      {:ok, expressions, []} ->
-        {:ok, %Program{expressions: expressions}, []}
+    program = do_parse_program(new(tokens))
 
-      {:ok, _expressions, [%Token{type: type, position: pos} | _]} ->
-        {:error, "Unexpected token at end of program: #{type}", pos}
-
-      {:error, msg, pos} ->
-        {:error, msg, pos}
+    case program do
+      {:ok, parser} -> {:ok, %Program{expressions: Enum.reverse(parser.expressions)}}
+      {:error, parser} -> {:error, parser.errors}
     end
   end
 
-  @spec parse_expressions(Token.tokens(), []) ::
-          {:ok, [Expression.expression_type()], []} | parser_error()
-  # Top-level expression parsing
-  defp parse_expressions(tokens, acc \\ [])
-  defp parse_expressions([], acc), do: {:ok, Enum.reverse(acc), []}
+  @spec do_parse_program(t()) :: {:ok, t()} | {:error, t()}
+  def do_parse_program(parser) do
+    if parser.curr.type == :eof do
+      case parser.errors do
+        [] ->
+          {:ok, parser}
 
-  # Let binding
-  defp parse_expressions(
-         [%Token{type: :let}, %Token{type: :ident, value: name, position: pos} | rest],
-         acc
-       ) do
-    case rest do
-      [%Token{type: :equals, value: _value, position: eq_pos} | []] ->
-        {:error, "Expected number, ident or lbrace, got nothing", eq_pos}
-
-      [%Token{type: :equals} | value_tokens] ->
-        case parse_expression(value_tokens, Precedence.lowest()) do
-          {:ok, value_expr, remaining} ->
-            let_expr = Expression.new_let(name, value_expr, pos)
-            parse_expressions(remaining, [let_expr | acc])
-
-          {:error, msg, error_pos} ->
-            {:error, msg, error_pos}
-        end
-
-      _ ->
-        {:error, "Expected = after identifier in let binding", pos}
-    end
-  end
-
-  # Invalid top-level expression
-  defp parse_expressions([%Token{type: type, position: pos} | _rest], _acc) do
-    {:error, "Invalid top-level expression: #{type}", pos}
-  end
-
-  @spec parse_expression(Token.tokens(), Precedence.precedence_value()) ::
-          {:ok, [Expression.expression_type()], Token.tokens() | []}
-          | parser_error()
-  # Expression parsing with precedence
-  defp parse_expression(tokens, precedence \\ Precedence.lowest()) do
-    with {:ok, left, rest} <- parse_prefix(tokens),
-         {:ok, result, remaining} <- parse_expression_continue(left, rest, precedence) do
-      {:ok, result, remaining}
-    end
-  end
-
-  @spec parse_expression_continue(Token.tokens(), Token.tokens(), Precedence.precedence_value()) ::
-          {:ok, Expression.expression_type(), Token.tokens() | []}
-          | parser_error()
-  defp parse_expression_continue(left, [next_token | _] = tokens, precedence) do
-    next_precedence = Precedence.get_precedence(next_token.type)
-
-    if precedence < next_precedence do
-      with {:ok, new_left, remaining} <- parse_infix(left, tokens, precedence) do
-        parse_expression_continue(new_left, remaining, precedence)
+        _errors ->
+          Debug.debug_inspect({:error, parser})
+          {:error, parser}
       end
     else
-      {:ok, left, tokens}
+      case parse_expression(parser) do
+        {:ok, parser, expression} ->
+          parser
+          |> append_expression(expression)
+          |> next_token()
+          |> do_parse_program()
+
+        {:error, parser} ->
+          Debug.debug_inspect({:error, parser})
+          {:error, parser}
+      end
     end
   end
 
-  defp parse_expression_continue(left, [], _precedence), do: {:ok, left, []}
+  @spec parse_expression(t()) :: {:ok, t(), Expression.t()} | {:error, t()}
+  def parse_expression(parser, precedence \\ Shell.Precedence.lowest()) do
+    case Map.get(parser.prefix_parse_fns, parser.curr.type) do
+      nil ->
+        err =
+          {:error,
+           append_error(
+             parser,
+             {:error, "no prefix parse function for #{parser.curr.type} found",
+              parser.curr.position}
+           )}
 
-  @spec parse_prefix(Token.tokens()) ::
-          {:ok, Expresssion.expression_type(), Token.tokens() | []} | parser_error()
-  # Prefix parsing functions
-  defp parse_prefix([%Token{type: type, position: pos} = token | rest] = tokens) do
-    case type do
-      :number ->
-        {:ok, Expression.new_number(token.value, token.position), rest}
+        Debug.debug_inspect(err)
+        err
 
-      :ident ->
-        {:ok, Expression.new_identifier(token.value, token.position), rest}
+      prefix_fn ->
+        case prefix_fn.(parser) do
+          {:ok, parser, left_exp} ->
+            parse_infix_expression(parser, left_exp, precedence)
 
-      :plus ->
-        {:ok, Expression.new_plus(token.value, token.position), rest}
+          {:error, error} ->
+            Debug.debug_inspect({:error, parser})
 
-      :fn ->
-        case parse_function(tokens) do
-          {:error, message, nil} -> {:error, message, pos}
-          _ -> parse_function(tokens)
-        end
-
-      :lbrace ->
-        case parse_block(tokens) do
-          {:error, message, nil} -> {:error, message, pos}
-          _ -> parse_block(tokens)
-        end
-
-      _ ->
-        {:error, "No prefix parse function for #{type}", token.position}
-    end
-  end
-
-  # Infix parsing functions
-
-  @spec parse_infix(Expression.expression_type(), Token.tokens(), Precedence.precedence_value()) ::
-          {:ok, Expression.expression_type(), Token.tokens() | []} | parser_error()
-  defp parse_infix(left, [%Token{type: :plus, position: pos} | rest], _precedence) do
-    with {:ok, right, remaining} <- parse_expression(rest, Precedence.sum()) do
-      {:ok, %Expression{type: :infix, value: {:plus, left, right}, position: pos}, remaining}
-    end
-  end
-
-  defp parse_infix(left, [%Token{type: :lparen, position: pos} | rest], _precedence) do
-    case parse_function_arguments(rest) do
-      {:ok, args, remaining} ->
-        {:ok, Expression.new_function_call(left.value, args, left.position), remaining}
-
-      {:error, message, nil} ->
-        {:error, message, pos}
-
-      error ->
-        error
-    end
-  end
-
-  defp parse_infix(left, rest, _precedence), do: {:ok, left, rest}
-
-  # Helper functions
-  defp parse_function([%Token{type: :fn, position: pos} | rest]) do
-    case parse_function_params(rest) do
-      {:ok, params, [%Token{type: :lbrace} | block_tokens]} ->
-        case parse_block(block_tokens) do
-          {:ok, body, remaining} ->
-            {:ok, Expression.new_function(params, body, pos), remaining}
-
-          error ->
-            error
-        end
-
-      {:ok, _params, [%Token{type: type, position: error_pos} | _]} ->
-        {:error, "Expected { after function parameters, got #{type}", error_pos}
-
-      error ->
-        error
-    end
-  end
-
-  defp parse_block(tokens, acc \\ []) do
-    case tokens do
-      [] ->
-        {:error, "Unclosed block", nil}
-
-      [%Token{type: :rbrace} | rest] ->
-        {:ok, Enum.reverse(acc), rest}
-
-      tokens ->
-        case parse_expression(tokens, Precedence.lowest()) do
-          {:ok, expr, remaining} ->
-            parse_block(remaining, [expr | acc])
-
-          {:error, msg, pos} ->
-            {:error, msg, pos}
+            {:error, error}
         end
     end
   end
 
-  defp parse_function_arguments(tokens, acc \\ []) do
-    case tokens do
-      [] ->
-        {:error, "Unclosed function call - expected )", nil}
+  @spec parse_infix_expression(t(), Expression.t(), Precedence.precedence_value()) ::
+          {:ok, t(), Expression.t()} | parser_error()
 
-      [%Token{type: :rparen} | rest] ->
-        {:ok, Enum.reverse(acc), rest}
+  def parse_infix_expression(parser, left_exp, precedence) do
+    case Map.get(parser.infix_parse_fns, parser.next.type) do
+      nil ->
+        {:ok, parser, left_exp}
 
-      [%Token{type: :comma} | rest] ->
-        parse_function_arguments(rest, acc)
+      infix_fn ->
+        next_precedence = Shell.Precedence.get_precedence(parser.next.type)
 
-      tokens ->
-        case parse_expression(tokens, Precedence.lowest()) do
-          {:ok, expr, [%Token{type: type} | _] = rest} when type in [:comma, :rparen] ->
-            parse_function_arguments(rest, [expr | acc])
+        if precedence < next_precedence do
+          parser = next_token(parser)
 
-          {:ok, _, [%Token{type: type, position: pos} | _]} ->
-            {:error, "Expected , or ) in function arguments, got #{type}", pos}
+          case infix_fn.(parser, left_exp) do
+            {:ok, parser, new_exp} ->
+              parse_infix_expression(parser, new_exp, precedence)
 
-          {:error, msg, pos} ->
-            {:error, msg, pos}
+            err ->
+              Debug.debug_inspect(err)
+              err
+          end
+        else
+          {:ok, parser, left_exp}
         end
     end
   end
 
-  defp parse_function_params(tokens, acc \\ []) do
-    case tokens do
-      [%Token{type: :lbrace} | _] = rest ->
-        {:ok, Enum.reverse(acc), rest}
-
-      [%Token{type: :ident, value: param, position: pos} | rest] ->
-        param_expr = Expression.new_identifier(param, pos)
-        parse_function_params(rest, [param_expr | acc])
-
-      [%Token{type: type, position: pos} | _] ->
-        {:error, "Expected parameter name or {, got #{type}", pos}
-
-      [] ->
-        {:error, "Unexpected end of input in function parameters", nil}
+  def parse_let(parser) do
+    with {:ok, parser} <- expect_peek?(parser, :ident),
+         {:ok, parser, identifier} <- parse_identifier(parser),
+         {:ok, parser} <- expect_peek?(parser, :equals),
+         parser <- next_token(parser),
+         {:ok, parser, value} <- parse_expression(parser, Shell.Precedence.lowest()) do
+      {:ok, parser, Expression.new_let(identifier, value, parser.curr.position)}
+    else
+      {:error, parser} ->
+        Debug.debug_inspect({:error, parser})
+        {:error, parser}
     end
+  end
+
+  @spec parse_infix_operator(t(), Expression.t()) :: {:ok, t(), Expression.t()} | parser_error()
+  def parse_infix_operator(parser, left) do
+    operator = parser.curr.type
+    precedence = Shell.Precedence.get_precedence(operator)
+    parser = next_token(parser)
+
+    case parse_expression(parser, precedence) do
+      {:ok, parser, right} ->
+        {:ok, parser, Expression.new_infix(left, operator, right, parser.curr.position)}
+
+      err ->
+        Debug.debug_inspect(err)
+        err
+    end
+  end
+
+  @spec parse_number(t()) :: {:ok, t(), Expression.t()}
+  def parse_number(%__MODULE__{curr: curr} = parser) do
+    {:ok, parser, Expression.new_number(curr.value, curr.position)}
+  end
+
+  @spec parse_identifier(t()) :: {:ok, t(), Expression.t()}
+  def parse_identifier(%__MODULE__{curr: curr} = parser) do
+    {:ok, parser, Expression.new_identifier(curr.value, curr.position)}
+  end
+
+  @spec curTokenIs?(t(), Token.token_type()) :: boolean()
+  def curTokenIs?(parser, type) do
+    parser.curr.type == type
+  end
+
+  @spec peekTokenIs?(t(), Token.token_type()) :: boolean()
+  def peekTokenIs?(parser, type) do
+    parser.next.type == type
+  end
+
+  @spec expect_peek?(t(), Token.token_type()) :: {:ok, t()} | {:error, t()}
+  def expect_peek?(parser, type) do
+    case peekTokenIs?(parser, type) do
+      true ->
+        {:ok, next_token(parser)}
+
+      false ->
+        {:error,
+         append_error(
+           parser,
+           {:error, "Expected type: #{type}, got #{parser.next.type}", parser.next.position}
+         )}
+    end
+  end
+
+  @spec append_error(t(), parser_error()) :: t()
+  def append_error(parser, {:error, _, _} = error) do
+    %__MODULE__{
+      parser
+      | errors: [error | parser.errors]
+    }
+  end
+
+  @spec append_expression(t(), Expression.t() | nil) :: t()
+  def append_expression(parser, nil), do: parser
+
+  def append_expression(parser, expression) do
+    %__MODULE__{
+      parser
+      | expressions: [expression | parser.expressions]
+    }
+  end
+
+  @spec register_prefix_fns(t()) :: t()
+  defp register_prefix_fns(parser) do
+    prefix_fns = %{
+      let: &parse_let/1,
+      ident: &parse_identifier/1,
+      number: &parse_number/1
+    }
+
+    %{parser | prefix_parse_fns: prefix_fns}
+  end
+
+  @spec register_infix_fns(t()) :: t()
+  defp register_infix_fns(parser) do
+    infix_fns = %{
+      plus: &parse_infix_operator/2,
+      minus: &parse_infix_operator/2,
+      asterisk: &parse_infix_operator/2,
+      slash: &parse_infix_operator/2,
+      eq: &parse_infix_operator/2,
+      not_eq: &parse_infix_operator/2,
+      lt: &parse_infix_operator/2,
+      gt: &parse_infix_operator/2
+    }
+
+    %{parser | infix_parse_fns: infix_fns}
+  end
+
+  @spec new([Token.t()]) :: t()
+  def new([]) do
+    eof = Token.new("eof", :eof, %Position{})
+
+    %__MODULE__{tokens: [], curr: eof, next: eof, expressions: [], errors: []}
+    |> register_prefix_fns()
+    |> register_infix_fns()
+  end
+
+  def new([curr | []]) do
+    eof =
+      Token.new("eof", :eof, %Position{
+        file: curr.position.file,
+        row: curr.position.row,
+        col: curr.position.col + 1
+      })
+
+    %__MODULE__{tokens: [], curr: curr, next: eof, expressions: [], errors: []}
+    |> register_prefix_fns()
+    |> register_infix_fns()
+  end
+
+  @spec new([Token.t()]) :: t()
+  def new([curr | rest]) do
+    [next | rest] = rest
+
+    %__MODULE__{tokens: rest, curr: curr, next: next, expressions: [], errors: []}
+    |> register_prefix_fns()
+    |> register_infix_fns()
+  end
+
+  @spec next_token(t()) :: t()
+  def next_token(%__MODULE__{tokens: [], curr: curr, next: next} = parser) do
+    %__MODULE__{parser | curr: next, next: curr, tokens: []}
+  end
+
+  def next_token(%__MODULE__{tokens: [token | rest], curr: _curr, next: next} = parser) do
+    %__MODULE__{parser | tokens: rest, curr: next, next: token}
   end
 end
