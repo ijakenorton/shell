@@ -87,8 +87,9 @@ defmodule Shell.Server do
 
             shell_message =
               case Shell.Parser.parse_program(tokens) do
-                {:ok, ast, []} ->
-                  IO.inspect(ast)
+                {:ok, ast} ->
+                  inspect(ast, pretty: true, width: 80, limit: :infinity)
+
                   eval = Evaluator.eval(ast)
 
                   case eval do
@@ -99,8 +100,11 @@ defmodule Shell.Server do
                       eval
                   end
 
-                {:error, message, pos} ->
-                  inspect({:error, message, pos}, pretty: true, width: 80, limit: :infinity)
+                {:error, errors} ->
+                  Enum.reverse(errors)
+                  |> Enum.with_index(1)
+                  |> Enum.map(fn {cmd, i} -> "#{i}: #{inspect(cmd)}\r\n" end)
+                  |> Enum.join("")
               end
 
             # formatted_ast = inspect(ast, pretty: true, width: 80, limit: :infinity)
