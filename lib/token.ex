@@ -29,7 +29,7 @@ defmodule Shell.Token do
     :equals,
     :plus,
     :minus,
-    :asterix,
+    :asterisk,
     :fslash,
     :bslash,
     :bang,
@@ -40,7 +40,8 @@ defmodule Shell.Token do
     :tab,
 
     # Special
-    :unlexible
+    :unlexible,
+    :eof
   ]
 
   # Create type spec from the token types
