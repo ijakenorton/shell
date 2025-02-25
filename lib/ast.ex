@@ -40,6 +40,15 @@ defmodule Shell.AST do
       }
     end
 
+    @spec new_prefix(expression_type(), t(), Shell.Position.t()) :: t()
+    def new_prefix(type, value, position) do
+      %__MODULE__{
+        type: type,
+        value: value,
+        position: position
+      }
+    end
+
     @spec new_identifier(String.t(), Shell.Position.t()) :: t()
     def new_identifier(name, position) do
       %__MODULE__{

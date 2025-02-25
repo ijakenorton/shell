@@ -95,11 +95,36 @@ defmodule Shell.Parser do
     end
   end
 
+  @spec parse_let(t()) :: {:ok, t(), Expression.t()} | {:error, t()}
+  def parse_let(parser) do
+    with {:ok, parser} <- expect_peek?(parser, :ident),
+         {:ok, parser, identifier} <- parse_identifier(parser),
+         {:ok, parser} <- expect_peek?(parser, :equals),
+         parser <- next_token(parser),
+         {:ok, parser, value} <- parse_expression(parser, Shell.Precedence.lowest()) do
+      {:ok, parser, Expression.new_let(identifier, value, parser.curr.position)}
+    else
+      {:error, parser} ->
+        Debug.debug_inspect({:error, parser})
+
+        parser =
+          append_error(
+            parser,
+            {:error, "Failed to parse let expression ending at position: ", parser.curr.position}
+          )
+
+        {:error, parser}
+    end
+  end
+
   @spec parse_infix_expression(t(), Expression.t(), Precedence.precedence_value()) ::
-          {:ok, t(), Expression.t()} | parser_error()
+          {:ok, t(), Expression.t()} | {:error, t()}
 
   def parse_infix_expression(parser, left_exp, precedence) do
-    case Map.get(parser.infix_parse_fns, parser.next.type) do
+    infix_type = parser.next.type
+    infix_pos = parser.next.position
+
+    case Map.get(parser.infix_parse_fns, infix_type) do
       nil ->
         {:ok, parser, left_exp}
 
@@ -113,9 +138,14 @@ defmodule Shell.Parser do
             {:ok, parser, new_exp} ->
               parse_infix_expression(parser, new_exp, precedence)
 
-            err ->
-              Debug.debug_inspect(err)
-              err
+            {:error, parser} ->
+              Debug.debug_inspect(parser.errors)
+
+              {:error,
+               append_error(
+                 parser,
+                 {:error, "Failed to parse infix of type: #{infix_type}", infix_pos}
+               )}
           end
         else
           {:ok, parser, left_exp}
@@ -123,23 +153,10 @@ defmodule Shell.Parser do
     end
   end
 
-  def parse_let(parser) do
-    with {:ok, parser} <- expect_peek?(parser, :ident),
-         {:ok, parser, identifier} <- parse_identifier(parser),
-         {:ok, parser} <- expect_peek?(parser, :equals),
-         parser <- next_token(parser),
-         {:ok, parser, value} <- parse_expression(parser, Shell.Precedence.lowest()) do
-      {:ok, parser, Expression.new_let(identifier, value, parser.curr.position)}
-    else
-      {:error, parser} ->
-        Debug.debug_inspect({:error, parser})
-        {:error, parser}
-    end
-  end
-
-  @spec parse_infix_operator(t(), Expression.t()) :: {:ok, t(), Expression.t()} | parser_error()
+  @spec parse_infix_operator(t(), Expression.t()) :: {:ok, t(), Expression.t()} | {:error, t()}
   def parse_infix_operator(parser, left) do
     operator = parser.curr.type
+    op_pos = parser.curr.position
     precedence = Shell.Precedence.get_precedence(operator)
     parser = next_token(parser)
 
@@ -147,9 +164,14 @@ defmodule Shell.Parser do
       {:ok, parser, right} ->
         {:ok, parser, Expression.new_infix(left, operator, right, parser.curr.position)}
 
-      err ->
-        Debug.debug_inspect(err)
-        err
+      {:error, parser} ->
+        Debug.debug_inspect(parser.errors)
+
+        {:error,
+         append_error(
+           parser,
+           {:error, "Failed to parse infix expression after #{operator}", op_pos}
+         )}
     end
   end
 
@@ -206,12 +228,32 @@ defmodule Shell.Parser do
     }
   end
 
+  @spec parse_prefix_expression(t()) :: Expression.t() | {:error, t()}
+  def parse_prefix_expression(%__MODULE__{curr: %{type: type, position: pos}} = parser) do
+    with parser <- next_token(parser),
+         {:ok, parser, value} <- parse_expression(parser, Shell.Precedence.prefix()) do
+      {:ok, parser, Expression.new_prefix(type, value, pos)}
+    else
+      {:error, parser} ->
+        parser =
+          append_error(
+            parser,
+            {:error, "Failed to parse prefix expression after #{type}", parser.curr.position}
+          )
+
+        Debug.debug_inspect({:error, parser})
+        {:error, parser}
+    end
+  end
+
   @spec register_prefix_fns(t()) :: t()
   defp register_prefix_fns(parser) do
     prefix_fns = %{
       let: &parse_let/1,
       ident: &parse_identifier/1,
-      number: &parse_number/1
+      number: &parse_number/1,
+      bang: &parse_prefix_expression/1,
+      minus: &parse_prefix_expression/1
     }
 
     %{parser | prefix_parse_fns: prefix_fns}
