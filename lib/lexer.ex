@@ -6,7 +6,7 @@ defmodule Shell.Lexer do
     ?. => :dot,
     ?= => :equals,
     ?+ => :plus,
-    ?- => :plus,
+    ?- => :minus,
     ?* => :asterisk,
     ?/ => :fslash,
     ?\\ => :bslash,
