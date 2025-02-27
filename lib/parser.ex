@@ -166,7 +166,7 @@ defmodule Shell.Parser do
     else
       case parse_expression(parser) do
         {:error, parser} ->
-          # Debug.debug_inspect({:error, parser})
+          Debug.debug_inspect({:error, parser})
           {:error, parser}
 
         {:ok, parser, expression} ->
@@ -199,7 +199,7 @@ defmodule Shell.Parser do
               parse_infix_expression(parser, new_exp, precedence)
 
             {:error, parser} ->
-              # Debug.debug_inspect(parser.errors)
+              Debug.debug_inspect(parser.errors)
 
               {:error,
                append_error(
@@ -225,7 +225,7 @@ defmodule Shell.Parser do
         {:ok, parser, Expression.new_infix(left, operator, right, parser.curr.position)}
 
       {:error, parser} ->
-        # Debug.debug_inspect(parser.errors)
+        Debug.debug_inspect(parser.errors)
 
         {:error,
          append_error(
@@ -301,7 +301,7 @@ defmodule Shell.Parser do
             {:error, "Failed to parse prefix expression after #{type}", parser.curr.position}
           )
 
-        # Debug.debug_inspect({:error, parser})
+        Debug.debug_inspect({:error, parser})
         {:error, parser}
     end
   end
