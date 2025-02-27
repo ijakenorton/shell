@@ -67,7 +67,7 @@ defmodule Shell.AST do
       }
     end
 
-    @spec new_function([t()], t(), Shell.Position.t()) :: t()
+    @spec new_function([t()], [t()], Shell.Position.t()) :: t()
     def new_function(params, body, position) do
       %__MODULE__{
         type: :function,

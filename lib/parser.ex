@@ -117,6 +117,66 @@ defmodule Shell.Parser do
     end
   end
 
+  @spec parser_take_while(t(), Token.token_type()) :: {:ok, t(), [Expression.t()]} | {:error, t()}
+  def parser_take_while(parser, type, acc \\ []) do
+    if peekTokenIs?(parser, type) do
+      Debug.debug_warning(parser)
+      Debug.debug_warning(acc)
+      parser = next_token(parser)
+
+      {:ok, parser, identifier} = parse_identifier(parser)
+      parser_take_while(parser, type, [identifier | acc])
+    else
+      Debug.debug_warning(acc)
+      {:ok, parser, Enum.reverse(acc)}
+    end
+  end
+
+  @spec parse_fn(t()) :: {:ok, t(), Expression.t()} | {:error, t()}
+  def parse_fn(parser) do
+    original_pos = parser.curr.position
+
+    # Parse parameters (space-separated identifiers)
+    {:ok, parser, parameters} = parser_take_while(parser, :ident)
+    Debug.debug_warning(parser)
+    # Check for opening brace for function body
+    case expect_peek?(parser, :lbrace) do
+      {:ok, parser} ->
+        parser = next_token(parser)
+
+        case parse_block(parser) do
+          {:ok, parser, body} ->
+            {:ok, parser, Expression.new_function(parameters, body, original_pos)}
+
+          {:error, parser} ->
+            {:error, parser}
+        end
+
+      {:error, parser} ->
+        {:error, parser}
+    end
+  end
+
+  @spec parse_block(t()) :: {:ok, t(), [Expression.t()]} | {:error, t()}
+  def parse_block(parser, acc \\ []) do
+    Debug.debug_warning(parser)
+
+    if parser.curr.type == :rbrace do
+      {:ok, parser, Enum.reverse(acc)}
+    else
+      case parse_expression(parser) do
+        {:error, parser} ->
+          # Debug.debug_inspect({:error, parser})
+          {:error, parser}
+
+        {:ok, parser, expression} ->
+          parser
+          |> next_token()
+          |> parse_block([expression | acc])
+      end
+    end
+  end
+
   @spec parse_infix_expression(t(), Expression.t(), Precedence.precedence_value()) ::
           {:ok, t(), Expression.t()} | {:error, t()}
 
@@ -139,7 +199,7 @@ defmodule Shell.Parser do
               parse_infix_expression(parser, new_exp, precedence)
 
             {:error, parser} ->
-              Debug.debug_inspect(parser.errors)
+              # Debug.debug_inspect(parser.errors)
 
               {:error,
                append_error(
@@ -165,7 +225,7 @@ defmodule Shell.Parser do
         {:ok, parser, Expression.new_infix(left, operator, right, parser.curr.position)}
 
       {:error, parser} ->
-        Debug.debug_inspect(parser.errors)
+        # Debug.debug_inspect(parser.errors)
 
         {:error,
          append_error(
@@ -241,7 +301,7 @@ defmodule Shell.Parser do
             {:error, "Failed to parse prefix expression after #{type}", parser.curr.position}
           )
 
-        Debug.debug_inspect({:error, parser})
+        # Debug.debug_inspect({:error, parser})
         {:error, parser}
     end
   end
@@ -252,6 +312,8 @@ defmodule Shell.Parser do
       let: &parse_let/1,
       ident: &parse_identifier/1,
       number: &parse_number/1,
+      fn: &parse_fn/1,
+      # lbrace: &parse_block/1,
       bang: &parse_prefix_expression/1,
       minus: &parse_prefix_expression/1
     }
