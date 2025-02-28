@@ -1,9 +1,11 @@
 defmodule Shell.Evaluator do
   require Logger
   require Shell.Debug
+  alias Shell.Position
   alias Shell.Debug
   alias Shell.AST.{Program, Expression}
   alias Shell.Object.Number
+  alias Shell.Object.Function
   alias Shell.Idents
 
   def eval(%Program{expressions: expressions}) do
@@ -60,6 +62,14 @@ defmodule Shell.Evaluator do
     end
   end
 
+  defp eval_expression(%Expression{
+         type: :function,
+         value: {parameters, body}
+       }) do
+    parameters = Enum.map(parameters, fn %Expression{type: _, value: value} -> value end)
+    %Function{parameters: parameters, body: body}
+  end
+
   defp eval_expression(%Expression{type: :let, value: {name, value_expr}} = expression) do
     Debug.debug_inspect(expression)
     Debug.debug_inspect(name)
@@ -70,5 +80,10 @@ defmodule Shell.Evaluator do
 
   defp eval_expression(%Expression{type: type, position: pos}) do
     {:error, "#{type} is not implemented", pos}
+  end
+
+  defp eval_expression(input) do
+    Debug.debug_warning(input)
+    {:error, "Unknown input, probably an interpreter error", %Position{}}
   end
 end

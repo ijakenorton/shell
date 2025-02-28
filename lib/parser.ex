@@ -157,23 +157,64 @@ defmodule Shell.Parser do
     end
   end
 
-  @spec parse_block(t()) :: {:ok, t(), [Expression.t()]} | {:error, t()}
-  def parse_block(parser, acc \\ []) do
-    Debug.debug_warning(parser)
+  @spec parse_block(t()) ::
+          {:ok, t(), [Expression.t()]} | {:ok, t(), [Expression.t()], number()} | {:error, t()}
+  def parse_block(parser, acc \\ [], max_depth \\ 100_000) do
+    if max_depth <= 0 do
+      {:error,
+       append_error(
+         parser,
+         {:error,
+          "Reached max_depth of recursion while parsing block, probably interpreter error",
+          parser.curr.position}
+       )}
+    end
 
-    if parser.curr.type == :rbrace do
-      {:ok, parser, Enum.reverse(acc)}
+    case parser.curr.type do
+      :rbrace ->
+        {:ok, parser, Enum.reverse(acc)}
+
+      :lbrace ->
+        case parse_expression(next_token(parser)) do
+          {:error, parser} ->
+            Debug.debug_inspect({:error, parser})
+            {:error, parser}
+
+          {:ok, parser, expression} ->
+            parser
+            |> next_token()
+            |> parse_block([expression | acc], max_depth - 1)
+        end
+
+      _ ->
+        case parse_expression(parser) do
+          {:error, parser} ->
+            Debug.debug_inspect({:error, parser})
+            {:error, parser}
+
+          {:ok, parser, expression} ->
+            parser
+            |> next_token()
+            |> parse_block([expression | acc], max_depth - 1)
+        end
+    end
+  end
+
+  @spec parse_prefix_expression(t()) :: Expression.t() | {:error, t()}
+  def parse_prefix_expression(%__MODULE__{curr: %{type: type, position: pos}} = parser) do
+    with parser <- next_token(parser),
+         {:ok, parser, value} <- parse_expression(parser, Shell.Precedence.prefix()) do
+      {:ok, parser, Expression.new_prefix(type, value, pos)}
     else
-      case parse_expression(parser) do
-        {:error, parser} ->
-          Debug.debug_inspect({:error, parser})
-          {:error, parser}
+      {:error, parser} ->
+        parser =
+          append_error(
+            parser,
+            {:error, "Failed to parse prefix expression after #{type}", parser.curr.position}
+          )
 
-        {:ok, parser, expression} ->
-          parser
-          |> next_token()
-          |> parse_block([expression | acc])
-      end
+        Debug.debug_inspect({:error, parser})
+        {:error, parser}
     end
   end
 
@@ -288,24 +329,6 @@ defmodule Shell.Parser do
     }
   end
 
-  @spec parse_prefix_expression(t()) :: Expression.t() | {:error, t()}
-  def parse_prefix_expression(%__MODULE__{curr: %{type: type, position: pos}} = parser) do
-    with parser <- next_token(parser),
-         {:ok, parser, value} <- parse_expression(parser, Shell.Precedence.prefix()) do
-      {:ok, parser, Expression.new_prefix(type, value, pos)}
-    else
-      {:error, parser} ->
-        parser =
-          append_error(
-            parser,
-            {:error, "Failed to parse prefix expression after #{type}", parser.curr.position}
-          )
-
-        Debug.debug_inspect({:error, parser})
-        {:error, parser}
-    end
-  end
-
   @spec register_prefix_fns(t()) :: t()
   defp register_prefix_fns(parser) do
     prefix_fns = %{
@@ -313,7 +336,7 @@ defmodule Shell.Parser do
       ident: &parse_identifier/1,
       number: &parse_number/1,
       fn: &parse_fn/1,
-      # lbrace: &parse_block/1,
+      lbrace: &parse_block/1,
       bang: &parse_prefix_expression/1,
       minus: &parse_prefix_expression/1
     }
