@@ -157,6 +157,26 @@ defmodule Shell.Parser do
     end
   end
 
+  @spec parse_grouped_expression(t()) :: {:ok, t(), Expression.t()} | {:error, t()}
+  def parse_grouped_expression(parser) do
+    parser = next_token(parser)
+
+    case parse_expression(parser, Shell.Precedence.lowest()) do
+      {:ok, parser, expression} ->
+        case expect_peek?(parser, :rparen) do
+          {:ok, parser} ->
+            {:ok, parser, expression}
+
+          {:error, parser} ->
+            {:error,
+             append_error(parser, {:error, "Expected closing parenthesis", parser.curr.position})}
+        end
+
+      {:error, parser} ->
+        {:error, parser}
+    end
+  end
+
   @spec parse_block(t()) ::
           {:ok, t(), [Expression.t()]} | {:ok, t(), [Expression.t()], number()} | {:error, t()}
   def parse_block(parser, acc \\ [], max_depth \\ 100_000) do
@@ -338,7 +358,8 @@ defmodule Shell.Parser do
       fn: &parse_fn/1,
       lbrace: &parse_block/1,
       bang: &parse_prefix_expression/1,
-      minus: &parse_prefix_expression/1
+      minus: &parse_prefix_expression/1,
+      lparen: &parse_grouped_expression/1
     }
 
     %{parser | prefix_parse_fns: prefix_fns}
