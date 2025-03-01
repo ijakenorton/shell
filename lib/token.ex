@@ -34,6 +34,7 @@ defmodule Shell.Token do
     :bslash,
     :bang,
     :question_mark,
+    :comma,
 
     # Whitespace
     :newline,

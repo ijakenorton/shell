@@ -18,6 +18,7 @@ defmodule Shell.Lexer do
     ?" => :dquote,
     ?? => :question_mark,
     ?! => :bang,
+    ?, => :comma,
     ?\n => :newline
   }
 

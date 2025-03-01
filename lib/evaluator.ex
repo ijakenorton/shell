@@ -78,6 +78,49 @@ defmodule Shell.Evaluator do
     value
   end
 
+  defp eval_expression(%Expression{type: :function_call, value: {name, args}, position: pos}) do
+    case eval_expression(name) do
+      %Shell.Object.Function{parameters: params, body: body} ->
+        if length(params) != length(args) do
+          {:error, "wrong number of arguments: got #{length(args)}, want #{length(params)}", pos}
+        else
+          evaluated_args = Enum.map(args, &eval_expression/1)
+
+          error =
+            Enum.find(evaluated_args, fn
+              {:error, _, _} -> true
+              _ -> false
+            end)
+
+          if error do
+            error
+          else
+            Shell.Idents.push_environment()
+
+            Enum.zip(params, evaluated_args)
+            |> Enum.each(fn {param, value} ->
+              Shell.Idents.put_ident(param, value)
+            end)
+
+            result = eval_expressions(body)
+
+            Shell.Idents.pop_environment()
+
+            result
+          end
+        end
+
+      {:error, _, _} = error ->
+        error
+
+      nil ->
+        {:error, "function not found: #{name.value}", pos}
+
+      other ->
+        {:error, "#{name.value} is not a function: got #{inspect(other)}", pos}
+    end
+  end
+
   defp eval_expression(%Expression{type: type, position: pos}) do
     {:error, "#{type} is not implemented", pos}
   end

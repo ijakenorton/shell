@@ -117,18 +117,23 @@ defmodule Shell.Parser do
     end
   end
 
-  @spec parser_take_while(t(), Token.token_type()) :: {:ok, t(), [Expression.t()]} | {:error, t()}
-  def parser_take_while(parser, type, acc \\ []) do
-    if peekTokenIs?(parser, type) do
-      Debug.debug_warning(parser)
-      Debug.debug_warning(acc)
-      parser = next_token(parser)
+  @spec parse_grouped_expression(t()) :: {:ok, t(), Expression.t()} | {:error, t()}
+  def parse_grouped_expression(parser) do
+    parser = next_token(parser)
 
-      {:ok, parser, identifier} = parse_identifier(parser)
-      parser_take_while(parser, type, [identifier | acc])
-    else
-      Debug.debug_warning(acc)
-      {:ok, parser, Enum.reverse(acc)}
+    case parse_expression(parser, Shell.Precedence.lowest()) do
+      {:ok, parser, expression} ->
+        case expect_peek?(parser, :rparen) do
+          {:ok, parser} ->
+            {:ok, parser, expression}
+
+          {:error, parser} ->
+            {:error,
+             append_error(parser, {:error, "Expected closing parenthesis", parser.curr.position})}
+        end
+
+      {:error, parser} ->
+        {:error, parser}
     end
   end
 
@@ -157,23 +162,83 @@ defmodule Shell.Parser do
     end
   end
 
-  @spec parse_grouped_expression(t()) :: {:ok, t(), Expression.t()} | {:error, t()}
-  def parse_grouped_expression(parser) do
-    parser = next_token(parser)
+  @spec parse_call_expression(t(), Expression.t()) :: {:ok, t(), Expression.t()} | {:error, t()}
+  def parse_call_expression(parser, function) do
+    curr_pos = parser.curr.position
 
-    case parse_expression(parser, Shell.Precedence.lowest()) do
-      {:ok, parser, expression} ->
-        case expect_peek?(parser, :rparen) do
-          {:ok, parser} ->
-            {:ok, parser, expression}
-
-          {:error, parser} ->
-            {:error,
-             append_error(parser, {:error, "Expected closing parenthesis", parser.curr.position})}
-        end
+    case parse_call_arguments(parser) do
+      {:ok, parser, arguments} ->
+        {:ok, parser, Expression.new_function_call(function, arguments, curr_pos)}
 
       {:error, parser} ->
-        {:error, parser}
+        {:error,
+         append_error(parser, {:error, "Could not parse function call arguments", curr_pos})}
+    end
+  end
+
+  @spec parse_call_arguments(t()) :: {:ok, t(), [Expression.t()]} | {:error, t()}
+  def parse_call_arguments(parser) do
+    curr_pos = parser.curr.position
+
+    # Handle empty argument list
+    if peekTokenIs?(parser, :rparen) do
+      parser = next_token(parser)
+      {:ok, parser, []}
+    else
+      parser = next_token(parser)
+
+      case parse_expression(parser, Shell.Precedence.lowest()) do
+        {:ok, parser, first_arg} ->
+          case collect_arguments(parser, [first_arg]) do
+            {:ok, parser, args} ->
+              case expect_peek?(parser, :rparen) do
+                {:ok, parser} -> {:ok, parser, args}
+                {:error, parser} -> {:error, parser}
+              end
+
+            {:error, parser} ->
+              {:error, parser}
+          end
+
+        {:error, parser} ->
+          {:error,
+           append_error(parser, {:error, "Failed to parse function call arguments", curr_pos})}
+      end
+    end
+  end
+
+  @spec collect_arguments(t(), [Expression.t()]) :: {:ok, t(), [Expression.t()]} | {:error, t()}
+  defp collect_arguments(parser, args) do
+    if peekTokenIs?(parser, :comma) do
+      # Move past comma
+      parser = next_token(parser)
+      # Move to next argument
+      parser = next_token(parser)
+
+      case parse_expression(parser, Shell.Precedence.lowest()) do
+        {:ok, parser, arg} ->
+          collect_arguments(parser, [arg | args])
+
+        {:error, parser} ->
+          {:error, parser}
+      end
+    else
+      {:ok, parser, Enum.reverse(args)}
+    end
+  end
+
+  @spec parser_take_while(t(), Token.token_type()) :: {:ok, t(), [Expression.t()]} | {:error, t()}
+  def parser_take_while(parser, type, acc \\ []) do
+    if peekTokenIs?(parser, type) do
+      Debug.debug_warning(parser)
+      Debug.debug_warning(acc)
+      parser = next_token(parser)
+
+      {:ok, parser, identifier} = parse_identifier(parser)
+      parser_take_while(parser, type, [identifier | acc])
+    else
+      Debug.debug_warning(acc)
+      {:ok, parser, Enum.reverse(acc)}
     end
   end
 
@@ -375,7 +440,8 @@ defmodule Shell.Parser do
       eq: &parse_infix_operator/2,
       not_eq: &parse_infix_operator/2,
       lt: &parse_infix_operator/2,
-      gt: &parse_infix_operator/2
+      gt: &parse_infix_operator/2,
+      lparen: &parse_call_expression/2
     }
 
     %{parser | infix_parse_fns: infix_fns}

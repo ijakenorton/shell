@@ -77,10 +77,10 @@ defmodule Shell.AST do
     end
 
     @spec new_function_call(String.t(), [t()], Shell.Position.t()) :: t()
-    def new_function_call(name, args, position) do
+    def new_function_call(function, args, position) do
       %__MODULE__{
         type: :function_call,
-        value: {name, args},
+        value: {function, args},
         position: position
       }
     end
