@@ -2,7 +2,6 @@ defmodule Shell.Server do
   alias Shell.Evaluator
   use GenServer
   require Logger
-
   @port 4040
 
   def start_link(_) do
@@ -39,10 +38,31 @@ defmodule Shell.Server do
     Logger.debug("Starting new shell session")
     # Add newline to the welcome message
     :gen_tcp.send(socket, "Its Shelling Time\r\n>> ")
-    shell_loop(socket)
+    shell_loop(socket, "")
   end
 
-  defp shell_loop(socket) do
+  # Define helper functions at the module level, not nested inside shell_loop
+  defp count_chars(string, char) do
+    string
+    |> String.graphemes()
+    |> Enum.count(fn c -> c == char end)
+  end
+
+  defp complete_command?(input) do
+    # Count of opening and closing braces and parentheses
+    open_braces = count_chars(input, "{")
+    close_braces = count_chars(input, "}")
+    open_parens = count_chars(input, "(")
+    close_parens = count_chars(input, ")")
+
+    # Make sure braces and parentheses are balanced
+    brace_balanced = open_braces == close_braces
+    paren_balanced = open_parens == close_parens
+
+    brace_balanced and paren_balanced
+  end
+
+  defp shell_loop(socket, buffer) do
     case :gen_tcp.recv(socket, 0) do
       {:ok, data} ->
         input = String.trim(data)
@@ -53,11 +73,11 @@ defmodule Shell.Server do
             :gen_tcp.send(socket, "Goodbye!\r\n")
             :gen_tcp.close(socket)
 
-          "" ->
+          "" when buffer == "" ->
             :gen_tcp.send(socket, ">> ")
-            shell_loop(socket)
+            shell_loop(socket, "")
 
-          "history" ->
+          "history" when buffer == "" ->
             case Shell.History.get_history() do
               [] ->
                 :gen_tcp.send(socket, "No history or history service not available\r\n>> ")
@@ -72,45 +92,52 @@ defmodule Shell.Server do
                 :gen_tcp.send(socket, formatted <> ">> ")
             end
 
-            shell_loop(socket)
+            shell_loop(socket, "")
 
           input ->
-            case Shell.History.put_history(input) do
-              {:error, :not_started} ->
-                Logger.warning("History service not available")
+            # Accumulate the input
+            new_buffer = if buffer == "", do: input, else: buffer <> "\n" <> input
 
-              _ ->
-                :ok
-            end
+            # Try to process the accumulated input
+            if complete_command?(new_buffer) do
+              # Process the complete command
+              case Shell.History.put_history(new_buffer) do
+                {:error, :not_started} ->
+                  Logger.warning("History service not available")
 
-            {tokens, _pos} = Shell.Lexer.lex(input)
-
-            shell_message =
-              case Shell.Parser.parse_program(tokens) do
-                {:ok, ast} ->
-                  inspect(ast, pretty: true, width: 80, limit: :infinity)
-
-                  eval = Evaluator.eval(ast)
-
-                  case eval do
-                    {:error, message, pos} ->
-                      inspect({:error, message, pos}, pretty: true, width: 80, limit: :infinity)
-
-                    _ ->
-                      eval
-                  end
-
-                {:error, errors} ->
-                  Enum.reverse(errors)
-                  |> Enum.with_index(1)
-                  |> Enum.map(fn {cmd, i} -> "#{i}: #{inspect(cmd)}\r\n" end)
-                  |> Enum.join("")
+                _ ->
+                  :ok
               end
 
-            # formatted_ast = inspect(ast, pretty: true, width: 80, limit: :infinity)
-            # IO.inspect(formatted_ast)
-            :gen_tcp.send(socket, "#{shell_message}\r\n>> ")
-            shell_loop(socket)
+              {tokens, _pos} = Shell.Lexer.lex(new_buffer)
+
+              shell_message =
+                case Shell.Parser.parse_program(tokens) do
+                  {:ok, ast} ->
+                    eval = Evaluator.eval(ast)
+
+                    case eval do
+                      {:error, message, pos} ->
+                        inspect({:error, message, pos}, pretty: true, width: 80, limit: :infinity)
+
+                      _ ->
+                        eval
+                    end
+
+                  {:error, errors} ->
+                    Enum.reverse(errors)
+                    |> Enum.with_index(1)
+                    |> Enum.map(fn {cmd, i} -> "#{i}: #{inspect(cmd)}\r\n" end)
+                    |> Enum.join("")
+                end
+
+              :gen_tcp.send(socket, "#{shell_message}\r\n>> ")
+              shell_loop(socket, "")
+            else
+              # Command is incomplete, keep accumulating
+              :gen_tcp.send(socket, "... ")
+              shell_loop(socket, new_buffer)
+            end
         end
 
       {:error, :closed} ->

@@ -99,6 +99,28 @@ defmodule Shell.Lexer do
     })
   end
 
+  # Handle newlines by incrementing row counter
+  def tokenize(%__MODULE__{
+        rest: <<?\n, rest::bitstring>>,
+        position: lexer_pos,
+        curr_token: token,
+        tokens: acc
+      }) do
+    # First, end the current token if there is one
+    tokens = make_and_add_token(token, acc)
+
+    # Update position to next line, first column
+    new_pos = increment_row(lexer_pos)
+
+    # Continue lexing with updated position
+    tokenize(%__MODULE__{
+      rest: rest,
+      position: new_pos,
+      curr_token: {<<>>, :none, new_pos},
+      tokens: tokens
+    })
+  end
+
   # Combined handling for alphanumeric characters
   def tokenize(%__MODULE__{
         rest: <<char::utf8, rest::bitstring>>,

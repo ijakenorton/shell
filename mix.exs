@@ -24,6 +24,7 @@ defmodule Shell.MixProject do
     [
       {:dialyxir, "~> 1.4", only: [:dev], runtime: false},
       {:ex_termbox, "~> 1.0.2"}
+      # {:logger_file_backend, "~> 0.0.13"}
     ]
   end
 end
