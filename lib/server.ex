@@ -118,7 +118,10 @@ defmodule Shell.Server do
 
                     case eval do
                       {:error, message, pos} ->
-                        inspect({:error, message, pos}, pretty: true, width: 80, limit: :infinity)
+                        Enum.reverse([message])
+                        |> Enum.with_index(1)
+                        |> Enum.map(fn {cmd, i} -> "#{i}: #{inspect(cmd)}\r\n" end)
+                        |> Enum.join("")
 
                       _ ->
                         eval
