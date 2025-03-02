@@ -368,25 +368,27 @@ defmodule Shell.TerminalClient do
   end
 
   defp handle_server_response(state, history) do
-    case :gen_tcp.recv(state.socket, 0) do
+    # Add a timeout value
+    case :gen_tcp.recv(state.socket, 0, 5000) do
       {:ok, response} ->
         trimmed_response = String.trim(response)
 
         # Update output with server response
         new_output = state.output ++ [trimmed_response]
 
-        # Trim output if it gets too long
-        max_lines = state.screen_height - 3
-
-        new_output =
-          if length(new_output) > max_lines,
-            do: Enum.take(new_output, -max_lines),
-            else: new_output
+        # No need to manually trim here - the render function will handle it
 
         new_state = %{state | history: history, history_index: 0, output: new_output}
 
         render(new_state)
-        event_loop(new_state)
+
+        # Check if there's more data to receive (non-blocking)
+        check_for_more_data(new_state)
+
+      {:error, :timeout} ->
+        # Timeout is normal, just continue
+        render(state)
+        event_loop(state)
 
       {:error, reason} ->
         log_error("Error receiving server response: #{inspect(reason)}")
@@ -394,28 +396,84 @@ defmodule Shell.TerminalClient do
     end
   end
 
+  defp check_for_more_data(state) do
+    # Non-blocking check
+    case :gen_tcp.recv(state.socket, 0, 0) do
+      {:ok, response} ->
+        # More data available, process it
+        trimmed_response = String.trim(response)
+        new_output = state.output ++ [trimmed_response]
+        new_state = %{state | output: new_output}
+        render(new_state)
+        # Keep checking
+        check_for_more_data(new_state)
+
+      {:error, :timeout} ->
+        # No more data available, continue with event loop
+        event_loop(state)
+
+      {:error, :closed} ->
+        log_info("Connection closed by server")
+        cleanup_and_exit(state)
+
+      {:error, reason} ->
+        log_error("Error in check_for_more_data: #{inspect(reason)}")
+        event_loop(state)
+    end
+  end
+
   defp render(state) do
     Termbox.clear()
 
-    # Render output area
-    render_output(state)
+    # Calculate how much of the output we can display
+    # Save one line for input
+    max_output_lines = state.screen_height - 1
+
+    # Take the most recent output that will fit
+    visible_output =
+      if length(state.output) > max_output_lines do
+        Enum.take(state.output, -max_output_lines)
+      else
+        state.output
+      end
+
+    # Render visible output
+    render_visible_output(visible_output, state.screen_width)
 
     # Determine which prompt to use
     prompt = if state.multi_line_mode, do: @multiline_prompt, else: @prompt
 
-    # Render input line
+    # Render input line at the bottom of the visible output
     prompt_length = String.length(prompt)
-    render_text(0, length(state.output), prompt)
-    # render_text(prompt_length, state.screen_height - 1, state.input)
-    render_text(prompt_length, length(state.output), state.input)
+    input_line = min(length(visible_output), state.screen_height - 1)
+    render_text(0, input_line, prompt)
+    render_text(prompt_length, input_line, state.input)
 
     # Set cursor position
-    Termbox.set_cursor(prompt_length + state.cursor_pos, length(state.output))
+    Termbox.set_cursor(prompt_length + state.cursor_pos, input_line)
 
     # Log the current state for debugging
-    log_debug("Rendering input: '#{state.input}', cursor at: #{state.cursor_pos}")
+    log_debug(
+      "Rendering input at line #{input_line}: '#{state.input}', cursor at: #{state.cursor_pos}"
+    )
 
     Termbox.present()
+  end
+
+  defp render_visible_output(output, width) do
+    output
+    |> Enum.with_index()
+    |> Enum.each(fn {line, index} ->
+      # Handle line wrapping for long lines
+      line_chunks = chunk_text(line, width)
+
+      line_chunks
+      |> Enum.with_index()
+      |> Enum.each(fn {chunk, chunk_index} ->
+        y = index + chunk_index
+        render_text(0, y, chunk)
+      end)
+    end)
   end
 
   defp render_output(state) do
